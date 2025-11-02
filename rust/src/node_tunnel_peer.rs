@@ -1,9 +1,11 @@
+use std::net::SocketAddr;
 use godot::builtin::PackedByteArray;
 use godot::prelude::{godot_api, GodotClass, ToGodot};
 use godot::classes::{IMultiplayerPeerExtension, MultiplayerPeerExtension};
 use godot::classes::multiplayer_peer::{ConnectionStatus, TransferMode};
 use godot::global::{godot_print, Error};
 use godot::obj::{Base, WithBaseField, WithUserSignals};
+use crate::renet_handler::RenetHandler;
 
 struct Packet {}
 
@@ -18,6 +20,8 @@ struct NodeTunnelPeer {
     incoming_packets: Vec<Packet>,
     current_packet: Option<Packet>,
 
+    renet_handler: Option<RenetHandler>,
+
     base: Base<MultiplayerPeerExtension>
 }
 
@@ -30,6 +34,7 @@ impl IMultiplayerPeerExtension for NodeTunnelPeer {
             target_peer: 0,
             incoming_packets: vec![],
             current_packet: None,
+            renet_handler: None,
             base,
         }
     }
@@ -85,6 +90,11 @@ impl IMultiplayerPeerExtension for NodeTunnelPeer {
     }
 
     fn poll(&mut self) {
+        if let Some(handler) = &mut self.renet_handler {
+            if let Err(e) = handler.update() {
+                godot_print!("Renet error: {}", e);
+            }
+        }
     }
 
     fn close(&mut self) {
@@ -107,10 +117,16 @@ impl IMultiplayerPeerExtension for NodeTunnelPeer {
 #[godot_api]
 impl NodeTunnelPeer {
     #[func]
-    fn host_room(&mut self) {
-        self.unique_id = 1;
-        self.connection_status = ConnectionStatus::CONNECTED;
-        self.signals().peer_connected().emit(1);
+    fn host_room(&mut self, relay_addr: String) {
+        if let Ok(addr) = relay_addr.parse::<SocketAddr>() {
+            let mut handler = RenetHandler::new();
+            if handler.create_client(addr).is_ok() {
+                godot_print!("created renet client");
+                self.renet_handler = Some(handler);
+                self.unique_id = 1;
+                self.connection_status = ConnectionStatus::CONNECTING;
+            }
+        }
     }
 
     #[func]
@@ -119,7 +135,7 @@ impl NodeTunnelPeer {
     }
 
     #[func]
-    fn join_room() {
+    fn join_room(&mut self, server_addr: String) {
 
     }
 }

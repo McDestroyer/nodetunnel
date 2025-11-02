@@ -8,3 +8,5 @@ crate-type = ["cdylib"]
 
 [dependencies]
 godot = "0.4.2"
+renet = "1.2.0"
+renet_netcode = "1.2.0"

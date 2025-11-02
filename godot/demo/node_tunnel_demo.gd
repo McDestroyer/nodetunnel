@@ -5,7 +5,7 @@ var peer: NodeTunnelPeer
 
 func _ready() -> void:
 	peer = NodeTunnelPeer.new()
-	peer.host_room()
+	peer.host_room("127.0.0.1:8080")
 	multiplayer.multiplayer_peer = peer
 	
 	multiplayer.peer_connected.connect(
