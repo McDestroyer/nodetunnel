@@ -1,21 +1,15 @@
 extends Node2D
 
+@export var nodetunnel_config: NodeTunnelConfig
+
 @onready var host_id = $UI/HostID
+@onready var peer := NodeTunnelPeer.new()
 
-var peer: NodeTunnelPeer
-
-func _process(_delta: float) -> void:
-	if Input.is_action_just_pressed("ui_accept"):
-		network_print.rpc("Hello world")
-
-@rpc("any_peer", "reliable")
-func network_print(msg: String):
-	print("Message For ", multiplayer.get_unique_id(), ": ", msg)
+func _ready() -> void:
+	peer.config = nodetunnel_config
+	peer.connect_to_relay()
 
 func _on_host_pressed() -> void:
-	peer = NodeTunnelPeer.new()
-	#peer.connect_to_relay("168.220.90.208:8080")
-	peer.connect_to_relay("127.0.0.1:8080")
 	peer.host_room()
 	multiplayer.multiplayer_peer = peer
 	
@@ -27,10 +21,15 @@ func _on_host_pressed() -> void:
 	$UI.hide()
 
 func _on_join_pressed() -> void:
-	peer = NodeTunnelPeer.new()
-	#peer.connect_to_relay("168.220.90.208:8080")
-	peer.connect_to_relay("127.0.0.1:8080")
 	peer.join_room(host_id.text)
 	multiplayer.multiplayer_peer = peer
 	
 	$UI.hide()
+
+func _process(_delta: float) -> void:
+	if Input.is_action_just_pressed("ui_accept"):
+		network_print.rpc("Hello world")
+
+@rpc("any_peer", "reliable")
+func network_print(msg: String):
+	print("Message For ", multiplayer.get_unique_id(), ": ", msg)

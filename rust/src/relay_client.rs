@@ -6,6 +6,7 @@ use godot::classes::multiplayer_peer::TransferMode;
 use godot::global::{godot_print, godot_warn};
 use renet::DefaultChannel;
 use reqwest::blocking::Client;
+use crate::node_tunnel_config::NodeTunnelConfig;
 use crate::packet_type::PacketType;
 use crate::renet_packet_peer::RenetPacketPeer;
 
@@ -49,12 +50,12 @@ impl RelayClient {
         }
     }
 
-    pub fn wake_server(&mut self, endpoint: &str, timeout: u64) -> Result<(), Box<dyn Error>> {
+    pub fn wake_server(&mut self, http_addr: String, timeout: u32) -> Result<(), Box<dyn Error>> {
         let client = Client::new();
         let start = Instant::now();
 
-        while start.elapsed() < Duration::from_secs(timeout) {
-            if client.get(endpoint)
+        while start.elapsed() < Duration::from_secs(timeout as u64) {
+            if client.get(http_addr.to_owned() + "/ready")
                 .timeout(Duration::from_secs(2))
                 .send()
                 .is_ok()
