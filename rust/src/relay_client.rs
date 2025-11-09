@@ -30,7 +30,9 @@ enum RelayState {
 pub enum RelayEvent {
     RoomJoined { room_id: String, peer_id: i32 },
     PeerJoinedRoom { peer_id: i32 },
-    GameDataReceived { transfer_mode: TransferMode, from_peer: i32, data: Vec<u8> }
+    GameDataReceived { transfer_mode: TransferMode, from_peer: i32, data: Vec<u8> },
+    PeerLeftRoom { peer_id: i32 },
+    ForceDisconnect,
 }
 
 pub struct RelayClient {
@@ -144,6 +146,14 @@ impl RelayClient {
                             transfer_mode: Self::channel_to_transfer_mode(received_packet.channel),
                             from_peer, data 
                         })
+                    }
+                    PacketType::PeerLeftRoom(godot_peer_id) => {
+                        events.push(RelayEvent::PeerLeftRoom {
+                            peer_id: godot_peer_id,
+                        })
+                    }
+                    PacketType::ForceDisconnect() => {
+                        events.push(RelayEvent::ForceDisconnect)
                     }
                     _ => {
                         godot_warn!("Received unexpected packet type: {:?}", packet)

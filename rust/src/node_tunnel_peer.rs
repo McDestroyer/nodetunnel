@@ -34,6 +34,9 @@ impl NodeTunnelPeer {
     #[signal]
     fn room_connected(room_id: String);
 
+    #[signal]
+    fn forced_disconnect();
+
     #[func]
     fn connect_to_relay(&mut self) {
         let config = self.config.as_ref()
@@ -103,12 +106,20 @@ impl NodeTunnelPeer {
                     self.signals().peer_connected().emit(peer_id as i64);
                 }
             }
+            RelayEvent::PeerLeftRoom { peer_id } => {
+                if self.is_server() {
+                    self.signals().peer_disconnected().emit(peer_id as i64);
+                }
+            }
             RelayEvent::GameDataReceived { transfer_mode, from_peer, data } => {
                 self.incoming_packets.push(GamePacket {
                     transfer_mode,
                     from_peer,
                     data
                 })
+            }
+            RelayEvent::ForceDisconnect => {
+                self.close();
             }
         }
     }
@@ -213,7 +224,10 @@ impl IMultiplayerPeerExtension for NodeTunnelPeer {
     }
 
     fn close(&mut self) {
+        self.unique_id = 0;
+        self.connection_status = ConnectionStatus::DISCONNECTED;
         self.relay_client.disconnect();
+        self.signals().forced_disconnect().emit();
     }
 
     // TODO: Implement

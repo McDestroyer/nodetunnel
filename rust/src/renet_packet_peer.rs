@@ -96,6 +96,10 @@ impl RenetPacketPeer {
     }
 
     pub fn disconnect(&mut self) {
+        if let Some(transport) = &mut self.transport {
+            transport.disconnect();
+        }
+
         self.client = None;
         self.transport = None;
     }

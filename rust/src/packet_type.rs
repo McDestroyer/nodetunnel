@@ -1,4 +1,5 @@
 use std::error::Error;
+use renet::Bytes;
 
 #[derive(Debug, Clone)]
 pub enum PacketType {
@@ -7,6 +8,8 @@ pub enum PacketType {
     ConnectedToRoom(String, i32),
     GameData(i32, Vec<u8>),
     PeerJoinedRoom(i32),
+    PeerLeftRoom(i32),
+    ForceDisconnect(),
 }
 
 impl PacketType {
@@ -39,14 +42,14 @@ impl PacketType {
                 if bytes.len() < 5 {
                     return Err("Packet too short for GameData".into());
                 }
-                
+
                 let from_pid_bytes: [u8; 4] = bytes[1..5]
                     .try_into()
                     .map_err(|_| "Failed to read sender ID")?;
-                
+
                 let from_pid = i32::from_be_bytes(from_pid_bytes);
                 let game_data = bytes[5..].to_vec();
-                
+
                 Ok(PacketType::GameData(from_pid, game_data))
             },
             4 => {
@@ -62,6 +65,22 @@ impl PacketType {
 
                 Ok(PacketType::PeerJoinedRoom(peer_id))
             },
+            5 => {
+                if bytes.len() < 4 {
+                    return Err("Packet too short for PeerLeftRoom".into());
+                }
+
+                let peer_id_bytes: [u8; 4] = bytes[1..5]
+                    .try_into()
+                    .map_err(|_| "Failed to read peer ID")?;
+
+                let peer_id = i32::from_be_bytes(peer_id_bytes);
+
+                Ok(PacketType::PeerLeftRoom(peer_id))
+            },
+            6 => {
+                Ok(PacketType::ForceDisconnect())
+            }
             _ => Err(format!("Unknown packet type: {}", bytes[0]).into()),
         }
     }
@@ -90,7 +109,13 @@ impl PacketType {
                 let mut result = vec![4];
                 result.extend(godot_pid.to_be_bytes());
                 result
-            }
+            },
+            PacketType::PeerLeftRoom(godot_pid) => {
+                let mut result = vec![5];
+                result.extend(godot_pid.to_be_bytes());
+                result
+            },
+            PacketType::ForceDisconnect() => vec![6],
         }
     }
 }
