@@ -1,9 +1,9 @@
-use std::error::Error;
 use std::net::{SocketAddr, UdpSocket};
 use std::time::{Duration, SystemTime};
 use renet::{ConnectionConfig, DefaultChannel, RenetClient};
 use renet_netcode::{ClientAuthentication, NetcodeClientTransport};
 use crate::protocol::version::PROTOCOL_VERSION;
+use crate::transport::error::TransportError;
 use crate::transport::types::{Channel, Packet};
 
 pub struct RenetTransport {
@@ -12,9 +12,11 @@ pub struct RenetTransport {
 }
 
 impl RenetTransport {
-    pub fn new(server_addr: SocketAddr) -> Result<Self, Box<dyn Error>> {
-        let socket = UdpSocket::bind("0.0.0.0:0")?;
-        socket.set_nonblocking(true)?;
+    pub fn new(server_addr: SocketAddr) -> Result<Self, TransportError> {
+        let socket = UdpSocket::bind("0.0.0.0:0")
+            .map_err(TransportError::BindFailed)?;
+        socket.set_nonblocking(true)
+            .map_err(TransportError::SetNonBlockingFailed)?;
 
         let current_time = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH)?;
         let client_id = current_time.as_millis() as u64;
@@ -32,7 +34,7 @@ impl RenetTransport {
         Ok(Self { client, transport })
     }
 
-    pub fn update(&mut self, delta_time: Duration) -> Result<(), Box<dyn Error>> {
+    pub fn update(&mut self, delta_time: Duration) -> Result<(), TransportError> {
         self.client.update(delta_time);
         self.transport.update(delta_time, &mut self.client)?;
         self.transport.send_packets(&mut self.client)?;
@@ -59,9 +61,11 @@ impl RenetTransport {
         recv_packets
     }
 
-    pub fn send_to_server(&mut self, data: Vec<u8>, channel: Channel) {
+    pub fn send_to_server(&mut self, data: Vec<u8>, channel: Channel) -> Result<(), TransportError> {
         self.client.send_message(DefaultChannel::from(channel), data);
-        self.transport.send_packets(&mut self.client).expect("TODO: panic message");
+        self.transport.send_packets(&mut self.client)?;
+
+        Ok(())
     }
 
     pub fn is_connected(&self) -> bool {
