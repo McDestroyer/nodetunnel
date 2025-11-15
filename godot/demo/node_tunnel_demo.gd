@@ -13,8 +13,11 @@ func _ready() -> void:
 
 func _on_host_pressed() -> void:
 	peer.connect_to_relay("127.0.0.1:8080", "nodetunnel_demo")
-	peer.host_room()
 	multiplayer.multiplayer_peer = peer
+	
+	await peer.authenticated
+	
+	peer.host_room()
 	
 	peer.room_connected.connect(
 		func(room_id: String):
@@ -44,8 +47,11 @@ func _on_host_pressed() -> void:
 
 func _on_join_pressed() -> void:
 	peer.connect_to_relay("127.0.0.1:8080", "nodetunnel_demo")
-	peer.join_room(host_id.text)
 	multiplayer.multiplayer_peer = peer
+	
+	await peer.authenticated
+	
+	peer.join_room(host_id.text)
 	
 	$UI.hide()
 
