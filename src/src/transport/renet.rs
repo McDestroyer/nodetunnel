@@ -35,6 +35,7 @@ impl RenetTransport {
     pub fn update(&mut self, delta_time: Duration) -> Result<(), Box<dyn Error>> {
         self.client.update(delta_time);
         self.transport.update(delta_time, &mut self.client)?;
+        self.transport.send_packets(&mut self.client)?;
 
         Ok(())
     }
