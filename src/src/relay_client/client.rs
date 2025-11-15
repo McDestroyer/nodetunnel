@@ -1,11 +1,11 @@
-use std::cmp::PartialEq;
-use std::error::Error;
-use std::time::Duration;
-use godot::global::{godot_error, godot_print};
 use crate::protocol::packet::PacketType;
 use crate::relay_client::events::RelayEvent;
 use crate::transport::renet::RenetTransport;
 use crate::transport::types::{Channel, Packet};
+use godot::global::godot_print;
+use std::cmp::PartialEq;
+use std::error::Error;
+use std::time::Duration;
 
 #[derive(Debug, PartialEq)]
 enum ClientState {
