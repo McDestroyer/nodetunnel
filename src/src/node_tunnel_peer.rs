@@ -1,11 +1,12 @@
 use std::net::{SocketAddr};
 use std::str::FromStr;
 use std::time::{Duration, Instant};
-use godot::builtin::PackedByteArray;
+use godot::builtin::{Array, Dictionary, PackedByteArray, Variant};
 use godot::prelude::{godot_api, GodotClass};
 use godot::classes::{IMultiplayerPeerExtension, MultiplayerPeerExtension};
 use godot::classes::multiplayer_peer::{ConnectionStatus, TransferMode};
-use godot::global::{godot_error, godot_print, godot_warn, Error};
+use godot::global::{godot_error, godot_warn, Error};
+use godot::meta::ToGodot;
 use godot::obj::{Base, WithUserSignals};
 use crate::relay_client::client::RelayClient;
 use crate::relay_client::events::RelayEvent;
@@ -28,8 +29,6 @@ struct NodeTunnelPeer {
     transfer_mode: TransferMode,
     incoming_packets: Vec<GamePacket>,
     relay_client: RelayClient,
-    pending_ready: bool,
-    ready_frame_counter: i32,
     outgoing_queue: Vec<(i32, Vec<u8>, Channel)>,
     last_poll_time: Option<Instant>,
     base: Base<MultiplayerPeerExtension>
@@ -48,6 +47,9 @@ impl NodeTunnelPeer {
 
     #[signal]
     fn forced_disconnect();
+
+    #[signal]
+    fn rooms_received(rooms: Array<Variant>);
 
     #[func]
     fn connect_to_relay(&mut self, relay_address: String, app_id: String) -> Error {
@@ -80,11 +82,25 @@ impl NodeTunnelPeer {
     }
 
     #[func]
-    fn host_room(&mut self) -> Error {
-        match self.relay_client.req_create_room() {
+    fn host_room(&mut self, public: bool, display_name: String, max_players: i32) -> Error {
+        match self.relay_client.req_create_room(public, display_name, max_players) {
             Ok(_) => Error::OK,
             Err(e) => {
                 godot_error!("[NodeTunnel] Failed to create room: {}", e);
+                Error::from(Error::ERR_CANT_CREATE)
+            }
+        }
+    }
+
+    #[func]
+    fn get_rooms(&mut self) -> Error {
+        match self.relay_client.req_rooms() {
+            Ok(_) => {
+
+                Error::OK
+            }
+            Err(e) => {
+                godot_error!("[NodeTunnel] Failed to get rooms: {}", e);
                 Error::from(Error::ERR_CANT_CREATE)
             }
         }
@@ -113,30 +129,41 @@ impl NodeTunnelPeer {
                 }
             },
             RelayEvent::Authenticated => {
-                self.connection_status = ConnectionStatus::CONNECTED;
                 self.signals().authenticated().emit();
             }
-            RelayEvent::RoomJoined { room_id, peer_id, existing_peers } => {
+            RelayEvent::RoomsReceived { rooms } => {
+                let mut room_array = Array::new();
+
+                for room in rooms {
+                    let mut room_dict = Dictionary::new();
+                    room_dict.set("id", room.id.clone());
+                    room_dict.set("name", room.name.clone());
+                    room_dict.set("players", room.players);
+                    room_dict.set("max_players", room.max_players);
+
+                    room_array.push(&room_dict.to_variant());
+                }
+
+                self.signals().rooms_received().emit(
+                    &room_array
+                )
+            }
+            RelayEvent::RoomJoined { room_id, peer_id } => {
+                self.connection_status = ConnectionStatus::CONNECTED;
                 self.unique_id = peer_id;
 
-                for peer in existing_peers {
-                    self.signals().peer_connected().emit(peer as i64);
+                if !self.is_server() {
+                    self.signals().peer_connected().emit(1);
                 }
 
                 self.signals().room_connected().emit(room_id);
-
-                if !self.is_server() {
-                    self.pending_ready = true;
-                    self.ready_frame_counter = 1;
-                }
-
-                godot_warn!("[NodeTunnel] Connected to room");
             },
             RelayEvent::PeerJoinedRoom { peer_id } => {
-                self.signals().peer_connected().emit(peer_id as i64);
+                if self.is_server() {
+                    self.signals().peer_connected().emit(peer_id as i64);
+                }
             },
             RelayEvent::PeerLeftRoom { peer_id } => {
-                godot_print!("Peer left room");
                 self.signals().peer_disconnected().emit(peer_id as i64);
             },
             RelayEvent::GameDataReceived { channel, from_peer, data } => {
@@ -153,8 +180,9 @@ impl NodeTunnelPeer {
             },
             RelayEvent::ForceDisconnect => {
                 if self.connection_status == ConnectionStatus::CONNECTED {
-                    godot_print!("[NodeTunnel] Client was forcibly disconnected from relay");
+                    godot_warn!("[NodeTunnel] Client was forcibly disconnected from relay");
                     self.close();
+                    self.signals().forced_disconnect().emit();
                 }
             },
             RelayEvent::Error { error_code, error_message } => {
@@ -176,8 +204,6 @@ impl IMultiplayerPeerExtension for NodeTunnelPeer {
             transfer_mode: TransferMode::UNRELIABLE,
             incoming_packets: vec![],
             relay_client: RelayClient::new(),
-            pending_ready: false,
-            ready_frame_counter: 0,
             outgoing_queue: vec![],
             last_poll_time: None,
             base,
@@ -286,21 +312,6 @@ impl IMultiplayerPeerExtension for NodeTunnelPeer {
                 }
             }
         }
-
-        if self.pending_ready {
-            self.ready_frame_counter -= 1;
-            if self.ready_frame_counter <= 0 {
-                self.pending_ready = false;
-
-                match self.relay_client.send_ready() {
-                    Ok(_) => {}
-                    Err(e) => {
-                        godot_error!("Failed to alert other peers of presence: {}", e);
-                        self.close();
-                    }
-                }
-            }
-        }
     }
 
     fn close(&mut self) {
@@ -311,13 +322,6 @@ impl IMultiplayerPeerExtension for NodeTunnelPeer {
 
         self.unique_id = 0;
         self.connection_status = ConnectionStatus::DISCONNECTED;
-
-        match self.relay_client.disconnect() {
-            Ok(_) => godot_print!("[NodeTunnel] Disconnected from relay"),
-            Err(e) => godot_error!("[NodeTunnel] Failed to disconnect from relay: {}", e)
-        }
-
-        self.signals().forced_disconnect().emit();
     }
 
     fn disconnect_peer(&mut self, _p_peer: i32, _p_force: bool) {}
@@ -327,7 +331,7 @@ impl IMultiplayerPeerExtension for NodeTunnelPeer {
     }
 
     fn is_server_relay_supported(&self) -> bool {
-        false
+        true
     }
 
     fn get_connection_status(&self) -> ConnectionStatus {

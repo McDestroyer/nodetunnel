@@ -8,10 +8,11 @@ func _init(url: String):
 	registry_url = url.trim_suffix("/")
 
 # Find the best relay by latency
-func find_best_relay(app_id: String) -> Dictionary:
+func find_best_relay(app_id: String) -> String:
 	var relays = await _fetch_relays(app_id)
 	if relays.is_empty():
-		return {}
+		print("Couldn't fetch relays!")
+		return ""
 	
 	var best_relay = {}
 	var best_latency = INF
@@ -22,7 +23,7 @@ func find_best_relay(app_id: String) -> Dictionary:
 			best_latency = latency
 			best_relay = relay
 	
-	return best_relay
+	return best_relay.address
 
 # Find which relay hosts a specific room
 func find_room(room_id: String) -> Dictionary:
@@ -65,7 +66,6 @@ func _fetch_relays(app_id: String) -> Array:
 	add_child(http)
 	
 	var url = "%s/api/collections/relays/records?filter=(allowed_apps~'%s')" % [registry_url, app_id]
-	print("URL: ", url)
 	var err = http.request(url)
 	if err != OK:
 		http.queue_free()

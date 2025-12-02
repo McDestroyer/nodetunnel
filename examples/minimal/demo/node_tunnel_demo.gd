@@ -2,25 +2,15 @@ extends Node2D
 
 signal connected_to_room
 
-var relay_addr = "127.0.0.1:8080"
-
-## get this either from nodetunnel's website
-## or if you're self hosting, pick any app id and put it in the
-## server's config.toml.
-const APP_ID = "c1xz9woxf6bi42m"
+## currently, the provided relay servers allow any app id to connect
+## so pick whatever you want, just make sure it's unique enough so someone else doesn't
+## accidentally use your app id and rooms from another game.
+const APP_ID = "nodetunnel_demo"
+const RELAY_ADDRESS = "45.33.64.148:8080"
 
 @onready var peer := NodeTunnelPeer.new()
 
 func _ready() -> void:
-	## OPTIONAL: in the event that multiple relays are available, nodetunnel provides
-	## a service to pick the closest (least ms) one. Note that connecting peers must also
-	## be on the same relay server as the host.
-	#var discover = RelayDiscovery.new("http://127.0.0.1:8090")
-	#add_child(discover)
-	#print(await discover.find_best_relay(APP_ID))
-	
-	peer.connect_to_relay(relay_addr, APP_ID)
-	
 	## this signal fires once the client has successfully been added to a room, whether they
 	## hosted the room or joined it.
 	peer.room_connected.connect(
@@ -66,13 +56,21 @@ func _ready() -> void:
 	
 	## connect_to_relay will need to be called regardless of whether we are hosting or joining, 
 	## so putting it in _ready is fine.
-	peer.connect_to_relay(relay_addr, APP_ID)
+	peer.connect_to_relay(RELAY_ADDRESS, APP_ID)
 	## make sure to set the scene's multiplayer peer, or else NodeTunnel will never connect.
 	multiplayer.multiplayer_peer = peer
 	
 	## wait until the client has authenticated with the relay server before allowing users to
 	## host or join rooms.
 	await peer.authenticated
+	
+	## handle the response for when a room list is sent to the client
+	## this is triggered from peer.get_rooms()
+	peer.rooms_received.connect(
+		func(rooms):
+			for room in rooms:
+				print("- ", room)
+	)
 	
 	$UI/Connecting.hide()
 	## in this case, hiding/showing UI/ConnectionControls prevents users from hosting/joining
@@ -82,7 +80,8 @@ func _ready() -> void:
 func _on_host_pressed() -> void:
 	## sends a request to the relay server to start hosting a room
 	## can result in an error, which should be handled by the relay_error signal
-	peer.host_room()
+	## use -1 for unlimited players
+	peer.host_room(true, "My Game", -1)
 	$UI/ConnectionControls.hide()
 
 func _on_join_pressed() -> void:
@@ -94,15 +93,9 @@ func _on_join_pressed() -> void:
 func _on_disconnect_pressed() -> void:
 	## close the connection
 	peer.close()
+	
+	## reload
+	get_tree().reload_current_scene()
 
-func _exit_tree() -> void:
-	## close the connection
-	peer.close()
-
-func _process(delta: float) -> void:
-	if Input.is_action_just_pressed("ui_accept"):
-		hello_world.rpc()
-
-@rpc("any_peer", "reliable")
-func hello_world():
-	print("Hello world!")
+func _on_room_list_timer_timeout() -> void:
+	peer.get_rooms()
