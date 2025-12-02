@@ -1,12 +1,12 @@
 use crate::protocol::packet::PacketType;
 use crate::relay_client::events::RelayEvent;
-use godot::global::{godot_print, godot_warn};
+use godot::global::{godot_print};
 use std::cmp::PartialEq;
 use std::time::Duration;
 use crate::protocol::version;
 use crate::relay_client::error::RelayClientError;
 use crate::transport::client::{ClientEvent, ClientTransport};
-use crate::transport::common::{Channel, Packet};
+use crate::transport::common::{Channel};
 
 #[derive(Debug, PartialEq)]
 enum ClientState {
@@ -79,12 +79,13 @@ impl RelayClient {
         if let Ok(packet_type) = PacketType::from_bytes(&data) {
             match packet_type {
                 PacketType::ClientAuthenticated => {
-                    godot_print!("Client authenticated");
                     self.client_state = ClientState::Authenticated;
                     events.push(RelayEvent::Authenticated);
                 }
-                PacketType::ConnectedToRoom { room_id, peer_id, existing_peers } =>
-                    events.push(RelayEvent::RoomJoined { room_id, peer_id, existing_peers }),
+                PacketType::ConnectedToRoom { room_id, peer_id } =>
+                    events.push(RelayEvent::RoomJoined { room_id, peer_id }),
+                PacketType::GetRooms { rooms } =>
+                    events.push(RelayEvent::RoomsReceived { rooms }),
                 PacketType::PeerJoinedRoom { peer_id } =>
                     events.push(RelayEvent::PeerJoinedRoom { peer_id }),
                 PacketType::PeerLeftRoom { peer_id } =>
@@ -119,27 +120,29 @@ impl RelayClient {
         Ok(())
     }
 
-    pub fn req_create_room(&mut self) -> Result<(), RelayClientError> {
+    pub fn req_create_room(&mut self, is_public: bool, name: String, max_players: i32) -> Result<(), RelayClientError> {
         self.send_packet(
-            PacketType::CreateRoom,
+            PacketType::CreateRoom {
+                is_public,
+                name,
+                max_players
+            },
             Channel::Reliable
         )?;
 
         Ok(())
+    }
+
+    pub fn req_rooms(&mut self) -> Result<(), RelayClientError> {
+        self.send_packet(
+            PacketType::ReqRooms,
+            Channel::Reliable,
+        )
     }
 
     pub fn req_join_room(&mut self, room_id: String) -> Result<(), RelayClientError> {
         self.send_packet(
             PacketType::JoinRoom { room_id },
-            Channel::Reliable
-        )?;
-
-        Ok(())
-    }
-
-    pub fn send_ready(&mut self) -> Result<(), RelayClientError> {
-        self.send_packet(
-            PacketType::PeerReady,
             Channel::Reliable
         )?;
 
@@ -157,14 +160,6 @@ impl RelayClient {
 
     pub fn is_connected(&self) -> bool {
         self.transport.as_ref().map_or(false, |transport| transport.is_connected())
-    }
-
-    pub fn disconnect(&mut self) -> Result<(), RelayClientError> {
-        let transport = self.transport.as_mut().ok_or(
-            RelayClientError::TransportNotInitialized
-        )?;
-
-        Ok(())
     }
 
     fn send_packet(&mut self, packet_type: PacketType, channel: Channel) -> Result<(), RelayClientError> {
